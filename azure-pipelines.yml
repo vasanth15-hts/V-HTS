@@ -48,30 +48,55 @@ steps:
     testResultsFiles: '**/surefire-reports/TEST-*.xml'
     goals: 'package'
 
+# Ensure Artifact Staging Directory exists
+- script: |
+    mkdir -p $(Build.ArtifactStagingDirectory)
+  displayName: 'Ensure Artifact Staging Directory Exists'
+
 # Run OWASP Dependency Check (for Maven projects)
 - task: dependency-check-build-task@6
   inputs:
     projectName: 'Java-Maven'
     scanPath: '$(Build.SourcesDirectory)'
     format: 'HTML'
+    outputFilePath: '$(Build.ArtifactStagingDirectory)/dependency-check-report.html'
     uploadReports: true
     nvdApiKey: $(NVD_API_KEY)
     useLocalNvd: true
   displayName: 'Run OWASP Dependency Check Scan'
 
+# Snyk Security Scan
 - task: SnykSecurityScan@1
   inputs:
     serviceConnectionEndpoint: 'CICD'
     testType: 'code'
     monitorWhen: 'always'
     failOnIssues: false
+    outputFormat: 'json'
+    outputFilePath: '$(Build.ArtifactStagingDirectory)/snyk-report.json'
 
 # Upload Snyk report to DefectDojo
 - script: |
-    curl -X POST -H "Authorization: Token $(DEFECTDOJO_API_KEY)" -F "file=@$(Build.ArtifactStagingDirectory)/snyk-report.json" -F "scan_type=snyk" -F "engagement=$(DEFECTDOJO_ENGAGEMENT_ID)" -F "product=$(DEFECTDOJO_PRODUCT_ID)" $(DEFECTDOJO_API_URL)/api/v2/import-snyk/
+    if [ -f "$(Build.ArtifactStagingDirectory)/snyk-report.json" ]; then
+      curl -X POST -H "Authorization: Token $(DEFECTDOJO_API_KEY)" \
+        -F "file=@$(Build.ArtifactStagingDirectory)/snyk-report.json" \
+        -F "scan_type=snyk" -F "engagement=$(DEFECTDOJO_ENGAGEMENT_ID)" \
+        -F "product=$(DEFECTDOJO_PRODUCT_ID)" $(DEFECTDOJO_API_URL)/api/v2/import-snyk/
+    else
+      echo "Error: Snyk report not found at $(Build.ArtifactStagingDirectory)/snyk-report.json"
+      exit 1
+    fi
   displayName: 'Upload Snyk Report to DefectDojo'
 
 # Upload Dependency Check report to DefectDojo
 - script: |
-    curl -X POST -H "Authorization: Token $(DEFECTDOJO_API_KEY)" -F "file=@$(Build.ArtifactStagingDirectory)/dependency-check-report.html" -F "scan_type=dependency-check" -F "engagement=$(DEFECTDOJO_ENGAGEMENT_ID)" -F "product=$(DEFECTDOJO_PRODUCT_ID)" $(DEFECTDOJO_API_URL)/api/v2/import-dependency-check/
+    if [ -f "$(Build.ArtifactStagingDirectory)/dependency-check-report.html" ]; then
+      curl -X POST -H "Authorization: Token $(DEFECTDOJO_API_KEY)" \
+        -F "file=@$(Build.ArtifactStagingDirectory)/dependency-check-report.html" \
+        -F "scan_type=dependency-check" -F "engagement=$(DEFECTDOJO_ENGAGEMENT_ID)" \
+        -F "product=$(DEFECTDOJO_PRODUCT_ID)" $(DEFECTDOJO_API_URL)/api/v2/import-dependency-check/
+    else
+      echo "Error: Dependency Check report not found at $(Build.ArtifactStagingDirectory)/dependency-check-report.html"
+      exit 1
+    fi
   displayName: 'Upload Dependency Check Report to DefectDojo'
