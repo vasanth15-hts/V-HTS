@@ -70,23 +70,11 @@ steps:
   inputs:
     serviceConnectionEndpoint: 'CICD'
     testType: 'code'
+    fileOrDirectory: '.'   # Ensures Snyk scans the entire repo
     monitorWhen: 'always'
     failOnIssues: false
     outputFormat: 'json'
     outputFilePath: '$(Build.ArtifactStagingDirectory)/snyk-report.json'
-
-# Upload Snyk report to DefectDojo
-- script: |
-    if [ -f "$(Build.ArtifactStagingDirectory)/snyk-report.json" ]; then
-      curl -X POST -H "Authorization: Token $(DEFECTDOJO_API_KEY)" \
-        -F "file=@$(Build.ArtifactStagingDirectory)/snyk-report.json" \
-        -F "scan_type=snyk" -F "engagement=$(DEFECTDOJO_ENGAGEMENT_ID)" \
-        -F "product=$(DEFECTDOJO_PRODUCT_ID)" $(DEFECTDOJO_API_URL)/api/v2/import-snyk/
-    else
-      echo "Error: Snyk report not found at $(Build.ArtifactStagingDirectory)/snyk-report.json"
-      exit 1
-    fi
-  displayName: 'Upload Snyk Report to DefectDojo'
 
 # Upload Dependency Check report to DefectDojo
 - script: |
