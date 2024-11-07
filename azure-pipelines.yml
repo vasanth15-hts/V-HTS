@@ -1,22 +1,83 @@
-# Maven
-# Build your Java project and run tests with Apache Maven.
-# Add steps that analyze code, save build artifacts, deploy, and more:
-# https://docs.microsoft.com/azure/devops/pipelines/languages/java
-
 trigger:
 - master
 
 pool:
-  vmImage: ubuntu-latest
+  vmImage: 'ubuntu-latest'
+
+variables:
+  mavenOptions: '-Xmx3072m'
+  jdkVersion: '1.11'
+  jdkArchitecture: 'x64'
+  mavenPomFile: 'pom.xml'
 
 steps:
+# Cache Maven dependencies
+- task: Cache@2
+  inputs:
+    key: 'maven | "$(Agent.OS)" | $(Build.SourcesDirectory)/$(mavenPomFile)'
+    restoreKeys: |
+      maven | "$(Agent.OS)"
+    path: ~/.m2/repository
+  displayName: 'Cache Maven dependencies'
+
+# Install Dependency Check for Maven (only if not cached)
+- task: Cache@2
+  inputs:
+    key: 'dependency-check | "$(Agent.OS)"'
+    restoreKeys: |
+      dependency-check | "$(Agent.OS)"
+    path: /opt/dependency-check
+  displayName: 'Cache Dependency Check installation'
+
+# Install Java JDK 11
+- script: |
+    sudo apt-get update
+    sudo apt-get install openjdk-11-jdk -y
+    export JAVA_HOME=/usr/lib/jvm/java-11-openjdk-amd64
+  displayName: 'Install Java JDK 11'
+
+# Maven build and test with options
 - task: Maven@3
   inputs:
-    mavenPomFile: 'pom.xml'
-    mavenOptions: '-Xmx3072m'
+    mavenPomFile: $(mavenPomFile)
+    mavenOptions: $(mavenOptions)
     javaHomeOption: 'JDKVersion'
-    jdkVersionOption: '1.11'
-    jdkArchitectureOption: 'x64'
+    jdkVersionOption: $(jdkVersion)
+    jdkArchitectureOption: $(jdkArchitecture)
     publishJUnitResults: true
     testResultsFiles: '**/surefire-reports/TEST-*.xml'
     goals: 'package'
+
+# Run OWASP Dependency Check (for Maven projects)
+- task: dependency-check-build-task@6
+  inputs:
+    projectName: 'Java-Maven'
+    scanPath: '$(Build.SourcesDirectory)'
+    format: 'HTML'
+    uploadReports: true
+    nvdApiKey: $(NVD_API_KEY)
+    useLocalNvd: true
+  displayName: 'Run OWASP Dependency Check Scan'
+
+# Install Snyk CLI for Maven security scanning
+- script: |
+    curl -sL https://github.com/snyk/snyk/releases/download/v1.117.2/snyk-linux.tar.gz | tar xz
+    sudo mv snyk /usr/local/bin/
+  displayName: 'Install Snyk CLI'
+
+- task: SnykSecurityScan@1
+  inputs:
+    serviceConnectionEndpoint: 'CICD'
+    testType: 'app'
+    monitorWhen: 'always'
+    failOnIssues: false
+
+# Upload Snyk report to DefectDojo
+- script: |
+    curl -X POST -H "Authorization: Token $(DEFECTDOJO_API_KEY)" -F "file=@$(Build.ArtifactStagingDirectory)/snyk-report.json" -F "scan_type=snyk" -F "engagement=$(DEFECTDOJO_ENGAGEMENT_ID)" -F "product=$(DEFECTDOJO_PRODUCT_ID)" $(DEFECTDOJO_API_URL)/api/v2/import-snyk/
+  displayName: 'Upload Snyk Report to DefectDojo'
+
+# Upload Dependency Check report to DefectDojo
+- script: |
+    curl -X POST -H "Authorization: Token $(DEFECTDOJO_API_KEY)" -F "file=@$(Build.ArtifactStagingDirectory)/dependency-check-report.html" -F "scan_type=dependency-check" -F "engagement=$(DEFECTDOJO_ENGAGEMENT_ID)" -F "product=$(DEFECTDOJO_PRODUCT_ID)" $(DEFECTDOJO_API_URL)/api/v2/import-dependency-check/
+  displayName: 'Upload Dependency Check Report to DefectDojo'
