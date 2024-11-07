@@ -59,12 +59,6 @@ steps:
     useLocalNvd: true
   displayName: 'Run OWASP Dependency Check Scan'
 
-# Install Snyk CLI for Maven security scanning
-- script: |
-    curl -sL https://github.com/snyk/snyk/releases/download/v1.117.2/snyk-linux.tar.gz | tar xz
-    sudo mv snyk /usr/local/bin/
-  displayName: 'Install Snyk CLI'
-
 - task: SnykSecurityScan@1
   inputs:
     serviceConnectionEndpoint: 'CICD'
